@@ -291,7 +291,9 @@ app.get("/manuals", async (req, res) => {
 
 /* ---------- 5) arranque ---------- */
 const PORT = process.env.PORT || 4000;
-
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
+});
 // Precargar los manuales antes de iniciar el servidor
 precargarManuales().then(success => {
   app.listen(PORT, () => {
