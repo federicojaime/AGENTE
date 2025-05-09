@@ -13,7 +13,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
-import { ingestPDF } from "./embed.js";
+import { ingestPDF, ingestRemotePDF } from "./embed.js";
 import { similaritySearch, verifyVectorStore, getAvailableManuals } from "./utils/vectorStore.js";
 import { OpenAI } from "openai";
 
@@ -39,6 +39,18 @@ app.use(cors({
 app.use(express.json());
 app.use('/manuals', express.static(path.join(__dirname, 'public/manuals'))); // Servir PDFs
 
+/* ---------- Configuración de manuales remotos ---------- */
+const REMOTE_MANUALS = process.env.REMOTE_MANUALS 
+  ? JSON.parse(process.env.REMOTE_MANUALS) 
+  : [
+      // Manuales predeterminados (puedes dejar esto vacío)
+      /*{
+        url: "https://example.com/manual1.pdf",
+        title: "Manual de Ejemplo 1",
+        author: "Autor Ejemplo"
+      }*/
+    ];
+
 /* ---------- Función para verificar si ya hay manuales cargados ---------- */
 async function verificarVectorStore() {
   try {
@@ -62,7 +74,7 @@ async function verificarVectorStore() {
   }
 }
 
-/* ---------- Función para precargar todos los manuales ---------- */
+/* ---------- Función para precargar manuales ---------- */
 async function precargarManuales() {
   // Primero verificamos si ya existen manuales en el vector store
   const existente = await verificarVectorStore();
@@ -71,43 +83,62 @@ async function precargarManuales() {
   }
 
   try {
-    // Creamos el directorio de manuales si no existe
-    if (!fs.existsSync(MANUALES_DIR)) {
-      console.log(`📁 Creando directorio de manuales: ${MANUALES_DIR}`);
-      fs.mkdirSync(MANUALES_DIR, { recursive: true });
-      console.log("❌ No se encontraron manuales para precargar");
-      return false;
-    }
-
-    // Leemos todos los PDFs del directorio
-    const archivos = fs.readdirSync(MANUALES_DIR).filter(file => file.toLowerCase().endsWith('.pdf'));
+    // Verificar si hay manuales locales
+    let tieneManualLocal = false;
     
-    if (archivos.length === 0) {
-      console.log("❌ No se encontraron PDFs en el directorio de manuales");
-      return false;
-    }
-    
-    console.log(`📚 Precargando ${archivos.length} manuales...`);
-    
-    // Procesamos cada PDF
-    for (const archivo of archivos) {
-      const rutaArchivo = path.join(MANUALES_DIR, archivo);
-      console.log(`   📄 Procesando: ${archivo}...`);
-      
-      try {
-        const resultado = await ingestPDF(rutaArchivo, archivo);
-        totalChunks += resultado.chunks;
-        manualesInfo.push(resultado);
-        console.log(`   ✅ Manual indexado: ${archivo} (${resultado.chunks} fragmentos)`);
-      } catch (err) {
-        console.error(`   ❌ Error al procesar ${archivo}:`, err.message);
+    if (fs.existsSync(MANUALES_DIR)) {
+      const archivos = fs.readdirSync(MANUALES_DIR).filter(file => file.toLowerCase().endsWith('.pdf'));
+      if (archivos.length > 0) {
+        tieneManualLocal = true;
+        console.log(`📚 Encontrados ${archivos.length} manuales locales para precargar...`);
+        
+        // Procesar manuales locales...
+        for (const archivo of archivos) {
+          const rutaArchivo = path.join(MANUALES_DIR, archivo);
+          console.log(`   📄 Procesando: ${archivo}...`);
+          
+          try {
+            const resultado = await ingestPDF(rutaArchivo, archivo);
+            totalChunks += resultado.chunks;
+            manualesInfo.push(resultado);
+            console.log(`   ✅ Manual indexado: ${archivo} (${resultado.chunks} fragmentos)`);
+          } catch (err) {
+            console.error(`   ❌ Error al procesar ${archivo}:`, err.message);
+          }
+        }
       }
+    } else {
+      console.log("📁 No se encontró el directorio de manuales locales");
+    }
+    
+    // Si no hay manuales locales o además queremos cargar remotos, procesamos URLs
+    if ((!tieneManualLocal || REMOTE_MANUALS.length > 0) && REMOTE_MANUALS.length > 0) {
+      console.log(`📚 Cargando ${REMOTE_MANUALS.length} manuales remotos...`);
+      
+      for (const manual of REMOTE_MANUALS) {
+        console.log(`   📄 Procesando manual remoto: ${manual.title || manual.url}...`);
+        try {
+          const resultado = await ingestRemotePDF(manual.url, manual.title, manual);
+          totalChunks += resultado.chunks;
+          manualesInfo.push(resultado);
+          console.log(`   ✅ Manual remoto indexado: ${manual.title || manual.url} (${resultado.chunks} fragmentos)`);
+        } catch (err) {
+          console.error(`   ❌ Error al procesar manual remoto ${manual.title || manual.url}:`, err.message);
+        }
+      }
+    } else if (!tieneManualLocal) {
+      console.log("⚠️ No hay manuales locales ni remotos configurados");
     }
     
     manualesCargados = manualesInfo.length > 0;
     ultimaCarga = new Date().toISOString();
     
-    console.log(`✅ Proceso de precarga finalizado. ${manualesInfo.length} manuales indexados con ${totalChunks} fragmentos totales.`);
+    if (manualesCargados) {
+      console.log(`✅ Proceso de precarga finalizado. ${manualesInfo.length} manuales indexados con ${totalChunks} fragmentos totales.`);
+    } else {
+      console.log("❌ No se pudieron cargar manuales ni locales ni remotos.");
+    }
+    
     return manualesCargados;
   } catch (err) {
     console.error("❌ Error al precargar manuales:", err.message);
@@ -226,7 +257,11 @@ app.post("/chat", async (req, res) => {
     
     // Agregar enlace al manual si no lo tiene ya
     if (topManual && !answer.includes("Ver manual:")) {
-      answer += `\n\n---\n[Ver manual: ${topManual.info.title}](/manuals/${path.basename(topManual.info.path)})`;
+      const manualLink = topManual.info.isRemote 
+        ? topManual.info.path  // Usar la URL directa para manuales remotos
+        : `/manuals/${path.basename(topManual.info.path)}`; // Para manuales locales
+        
+      answer += `\n\n---\n[Ver manual: ${topManual.info.title}](${manualLink})`;
     }
 
     res.json({ 
@@ -291,17 +326,27 @@ app.get("/manuals", async (req, res) => {
 
 /* ---------- 5) arranque ---------- */
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
-});
-// Precargar los manuales antes de iniciar el servidor
-precargarManuales().then(success => {
-  app.listen(PORT, () => {
-    console.log(`🚀 Backend listo en http://localhost:${PORT}`);
-    if (success) {
-      console.log(`📘 ${manualesInfo.length} manuales precargados y listos para consultas (${totalChunks} fragmentos totales)`);
+
+// Función para iniciar el servidor con manejo de errores de puerto
+const startServer = (port) => {
+  app.listen(port, () => {
+    console.log(`🚀 Servidor ejecutándose en http://localhost:${port}`);
+  }).on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.log(`Puerto ${port} en uso, intentando con ${port + 1}...`);
+      startServer(port + 1);
     } else {
-      console.log("⚠️ No se precargaron manuales correctamente. Verifica el directorio de manuales.");
+      console.error('Error al iniciar el servidor:', error);
     }
   });
+};
+
+// Precargar los manuales antes de iniciar el servidor
+precargarManuales().then(success => {
+  startServer(PORT);
+  if (success) {
+    console.log(`📘 ${manualesInfo.length} manuales precargados y listos para consultas (${totalChunks} fragmentos totales)`);
+  } else {
+    console.log("⚠️ No se precargaron manuales correctamente. Verifica la configuración de manuales remotos o el directorio local.");
+  }
 });

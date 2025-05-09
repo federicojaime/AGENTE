@@ -6,6 +6,7 @@
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import axios from "axios";
 import pdf from "pdf-parse-debugging-disabled";   // ← fork sin modo debug
 import { OpenAI } from "openai";
 import { upsert } from "./utils/vectorStore.js";
@@ -34,7 +35,7 @@ function chunkText(txt) {
   return blocks;
 }
 
-/* ---------- función principal ---------- */
+/* ---------- función principal para PDFs locales ---------- */
 export async function ingestPDF(pathPdf, originalFilename) {
   /* 1) leer y extraer texto */
   const buffer = await fs.readFile(pathPdf);
@@ -73,7 +74,8 @@ export async function ingestPDF(pathPdf, originalFilename) {
     author: info.Author || "Desconocido",
     pages: pdfData.numpages || 0,
     createdAt: new Date().toISOString(),
-    path: `/manuals/${manualId}.pdf`  // Ruta donde se guardará el PDF
+    path: `/manuals/${manualId}.pdf`,  // Ruta donde se guardará el PDF
+    isRemote: false
   };
 
   /* 6) Asegurar que exista el directorio de manuales público */
@@ -86,6 +88,72 @@ export async function ingestPDF(pathPdf, originalFilename) {
   await upsert(vectors, manualId, manualInfo);
 
   /* 9) devolver información del manual indexado */
+  return {
+    id: manualId,
+    chunks: pieces.length,
+    info: manualInfo
+  };
+}
+
+/* ---------- función para procesar PDF remoto ---------- */
+export async function ingestRemotePDF(url, title, metadata = {}) {
+  console.log(`Descargando PDF desde: ${url}`);
+  
+  /* 1) Descargar el PDF */
+  const response = await axios.get(url, { 
+    responseType: 'arraybuffer',
+    headers: {
+      'Accept': 'application/pdf'
+    },
+    maxContentLength: 50 * 1024 * 1024 // 50 MB max
+  });
+  const buffer = Buffer.from(response.data);
+  
+  /* 2) Extraer texto */
+  const pdfData = await pdf(buffer);
+  const text = pdfData.text;
+  const info = pdfData.info || {};
+  
+  /* 3) Trocear en bloques */
+  const pieces = chunkText(text);
+  
+  /* 4) Generar embeddings */
+  const openai = new OpenAI();
+  const vectors = [];
+  
+  for (const [idx, piece] of pieces.entries()) {
+    const { data: [embed] } = await openai.embeddings.create({
+      model: EMBED_MODEL,
+      input: piece
+    });
+    
+    vectors.push({
+      id: `chunk-${idx}`,
+      text: piece,
+      vector: embed
+    });
+  }
+  
+  /* 5) Generar un ID único para el manual */
+  const manualId = crypto.createHash('md5').update(url + Date.now()).digest('hex');
+  
+  /* 6) Preparar información del manual */
+  const filename = url.split("/").pop().split("?")[0] || "documento.pdf";
+  const manualInfo = {
+    url: url,
+    filename: filename,
+    title: title || metadata.title || info.Title || filename,
+    author: metadata.author || info.Author || "Desconocido",
+    pages: pdfData.numpages || 0,
+    createdAt: new Date().toISOString(),
+    path: url, // La URL original para acceder directamente
+    isRemote: true
+  };
+  
+  /* 7) Guardar en el vector store */
+  await upsert(vectors, manualId, manualInfo);
+  
+  /* 8) Devolver información */
   return {
     id: manualId,
     chunks: pieces.length,
