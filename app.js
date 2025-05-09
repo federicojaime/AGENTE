@@ -76,7 +76,7 @@ async function verificarVectorStore() {
   } catch (err) {
     console.error("Error al verificar vector store:", err);
     return false;
-  }
+  }  
 }
 
 /* ---------- Función para precargar manuales ---------- */
