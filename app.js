@@ -40,16 +40,21 @@ app.use(express.json());
 app.use('/manuals', express.static(path.join(__dirname, 'public/manuals'))); // Servir PDFs
 
 /* ---------- Configuración de manuales remotos ---------- */
-const REMOTE_MANUALS = process.env.REMOTE_MANUALS 
-  ? JSON.parse(process.env.REMOTE_MANUALS) 
-  : [
-      // Manuales predeterminados (puedes dejar esto vacío)
-      /*{
-        url: "https://example.com/manual1.pdf",
-        title: "Manual de Ejemplo 1",
-        author: "Autor Ejemplo"
-      }*/
-    ];
+let REMOTE_MANUALS = [];
+try {
+  if (process.env.REMOTE_MANUALS) {
+    let rawValue = process.env.REMOTE_MANUALS;
+    // Eliminar el signo '=' al inicio si existe
+    if (rawValue.startsWith('=')) {
+      rawValue = rawValue.substring(1);
+    }
+    REMOTE_MANUALS = JSON.parse(rawValue);
+    console.log("Manuales remotos cargados correctamente:", REMOTE_MANUALS.length);
+  }
+} catch (error) {
+  console.error("Error al analizar REMOTE_MANUALS:", error.message);
+  console.log("Valor recibido:", process.env.REMOTE_MANUALS);
+}
 
 /* ---------- Función para verificar si ya hay manuales cargados ---------- */
 async function verificarVectorStore() {
