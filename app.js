@@ -44,16 +44,43 @@ let REMOTE_MANUALS = [];
 try {
   if (process.env.REMOTE_MANUALS) {
     let rawValue = process.env.REMOTE_MANUALS;
-    // Eliminar el signo '=' al inicio si existe
-    if (rawValue.startsWith('=')) {
+    
+    // Eliminar el signo '=' u otros caracteres no JSON al inicio si existen
+    while (rawValue.charAt(0) !== '[' && rawValue.length > 0) {
       rawValue = rawValue.substring(1);
     }
-    REMOTE_MANUALS = JSON.parse(rawValue);
-    console.log("Manuales remotos cargados correctamente:", REMOTE_MANUALS.length);
+    
+    // Intentar parsear
+    try {
+      REMOTE_MANUALS = JSON.parse(rawValue);
+      console.log("Manuales remotos cargados correctamente:", REMOTE_MANUALS.length);
+    } catch (parseError) {
+      console.error("Error al parsear JSON de REMOTE_MANUALS:", parseError.message);
+      
+      // Plan B: Usar las URLs directamente si el JSON falla
+      REMOTE_MANUALS = [
+        {"url":"https://codeo.site/manual-crm/plan-de-negocios.pdf", "title":"Plan de Negocios"},
+        {"url":"https://codeo.site/manual-crm/manual-ventas.pdf", "title":"Manual de Ventas"},
+        {"url":"https://codeo.site/manual-crm/manual-del-distribuidor.pdf", "title":"Manual del Distribuidor"},
+        {"url":"https://codeo.site/manual-crm/manual-de-financiamiento.pdf", "title":"Manual de Financiamiento"},
+        {"url":"https://codeo.site/manual-crm/dossier.pdf", "title":"Dossier"}
+      ];
+      console.log("Usando lista de manuales predeterminada:", REMOTE_MANUALS.length);
+    }
   }
 } catch (error) {
-  console.error("Error al analizar REMOTE_MANUALS:", error.message);
+  console.error("Error general al procesar REMOTE_MANUALS:", error.message);
   console.log("Valor recibido:", process.env.REMOTE_MANUALS);
+  
+  // Usar una configuración de respaldo en caso de cualquier error
+  REMOTE_MANUALS = [
+    {"url":"https://codeo.site/manual-crm/plan-de-negocios.pdf", "title":"Plan de Negocios"},
+    {"url":"https://codeo.site/manual-crm/manual-ventas.pdf", "title":"Manual de Ventas"},
+    {"url":"https://codeo.site/manual-crm/manual-del-distribuidor.pdf", "title":"Manual del Distribuidor"},
+    {"url":"https://codeo.site/manual-crm/manual-de-financiamiento.pdf", "title":"Manual de Financiamiento"},
+    {"url":"https://codeo.site/manual-crm/dossier.pdf", "title":"Dossier"}
+  ];
+  console.log("Usando configuración de respaldo:", REMOTE_MANUALS.length);
 }
 
 /* ---------- Función para verificar si ya hay manuales cargados ---------- */
