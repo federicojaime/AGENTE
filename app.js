@@ -59,6 +59,7 @@ try {
       
       // Plan B: Usar las URLs directamente si el JSON falla
       REMOTE_MANUALS = [
+        {"url":"https://codeo.site/manual-crm/manual-induccion.pdf", "title":"Manual de Inducción"},
         {"url":"https://codeo.site/manual-crm/plan-de-negocios.pdf", "title":"Plan de Negocios"},
         {"url":"https://codeo.site/manual-crm/manual-ventas.pdf", "title":"Manual de Ventas"},
         {"url":"https://codeo.site/manual-crm/manual-del-distribuidor.pdf", "title":"Manual del Distribuidor"},
@@ -74,6 +75,7 @@ try {
   
   // Usar una configuración de respaldo en caso de cualquier error
   REMOTE_MANUALS = [
+    {"url":"https://codeo.site/manual-crm/manual-induccion.pdf", "title":"Manual de Inducción"},
     {"url":"https://codeo.site/manual-crm/plan-de-negocios.pdf", "title":"Plan de Negocios"},
     {"url":"https://codeo.site/manual-crm/manual-ventas.pdf", "title":"Manual de Ventas"},
     {"url":"https://codeo.site/manual-crm/manual-del-distribuidor.pdf", "title":"Manual del Distribuidor"},
