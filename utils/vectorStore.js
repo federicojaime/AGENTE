@@ -77,9 +77,33 @@ export async function similaritySearch(queryVec, topK = 4) {
 
     for (const obj of embeddings) {
       const score = cosine(queryVec, obj.vector);
-      // Agregamos un umbral de relevancia para mejorar la calidad de las respuestas
-      // Solo incluimos resultados con score superior a 0.65
-      if (score > 0.65) {
+      
+      // CAMBIO CLAVE: Reducir el umbral de relevancia a 0.4 (era 0.65)
+      // Esto permitirá que más resultados sean considerados relevantes
+      if (score > 0.4) {
+        allResults.push({
+          text: obj.text,
+          score: score,
+          manualId: manualId,
+          manualInfo: manualInfo,
+          chunkId: obj.id || `chunk-${embeddings.indexOf(obj)}`
+        });
+      }
+    }
+  }
+
+  // Si no hay resultados que superen el umbral reducido, tomamos los mejores sin filtrar
+  if (allResults.length === 0) {
+    console.log("No se encontraron resultados por encima del umbral, tomando los mejores disponibles...");
+    
+    // Buscar en todos los manuales sin umbral
+    for (const manualId in cache.manuals) {
+      const manualData = cache.manuals[manualId];
+      const embeddings = manualData.embeddings;
+      const manualInfo = manualData.info;
+
+      for (const obj of embeddings) {
+        const score = cosine(queryVec, obj.vector);
         allResults.push({
           text: obj.text,
           score: score,

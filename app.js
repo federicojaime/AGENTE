@@ -206,6 +206,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 
 /* ---------- 2) chat RAG ---------- */
 app.post("/chat", async (req, res) => {
+  console.log("📝 Recibida consulta:", req.body.message);
+  
   const { message, history = [] } = req.body;
   if (!message?.trim()) return res.status(400).json({ 
     error: "message vacío",
@@ -234,7 +236,14 @@ app.post("/chat", async (req, res) => {
 
     /* 2.2 recuperación de contexto (top‑4) */
     const contextResults = await similaritySearch(embedding, 4);
+    console.log(`🔍 Resultados encontrados: ${contextResults.length}`);
+    
+    if (contextResults.length > 0) {
+      console.log(`   Mejor coincidencia (score): ${contextResults[0].score.toFixed(4)}`);
+    }
+    
     if (contextResults.length === 0) {
+      console.log("⚠️ No se encontraron resultados relevantes para la consulta");
       return res.json({
         answer: "Lo siento, no he podido encontrar información relevante en nuestros manuales. ¿Podrías reformular tu pregunta o intentar con otro tema? Si necesitas ayuda adicional, puedes contactar directamente con un asesor: [Contactar por WhatsApp](https://wa.me/2657218215?text=Hola%2C%20necesito%20ayuda%20con%20una%20consulta%20sobre%20los%20manuales)",
         manualesCargados
@@ -244,6 +253,7 @@ app.post("/chat", async (req, res) => {
     // Extraer los textos y la información del manual más relevante
     const contextTexts = contextResults.map(result => result.text);
     const context = contextTexts.join("\n---\n");
+    console.log(`📚 Contexto recuperado (fragmentos): ${contextTexts.length}`);
 
     // Obtener el manual más relevante (el que tiene más coincidencias en los resultados)
     const manualCounts = {};
@@ -263,8 +273,13 @@ app.post("/chat", async (req, res) => {
         };
       }
     }
+    
+    if (topManual) {
+      console.log(`📕 Manual más relevante: ${topManual.info.title} (${topCount} coincidencias)`);
+    }
 
     /* 2.3 generación */
+    console.log("🤖 Generando respuesta con GPT...");
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -294,6 +309,7 @@ app.post("/chat", async (req, res) => {
     });
 
     let answer = completion.choices[0].message.content;
+    console.log("✅ Respuesta generada correctamente");
     
     // Preparar el enlace a WhatsApp
     const whatsappNumber = "2657218215";
@@ -310,7 +326,9 @@ app.post("/chat", async (req, res) => {
     }
     
     // Agregar enlace a WhatsApp para contacto con un asesor real
-    answer += `\n\n¿Necesitas hablar con un asesor real? [Contacta por WhatsApp](${whatsappLink})`;
+    if (!answer.includes("WhatsApp")) {
+      answer += `\n\n¿Necesitas hablar con un asesor real? [Contacta por WhatsApp](${whatsappLink})`;
+    }
 
     res.json({ 
       answer,
@@ -319,7 +337,7 @@ app.post("/chat", async (req, res) => {
       manualesCargados
     });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error en proceso de chat:", err);
     res.status(500).json({ 
       error: err.message,
       mensaje: "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo.",
