@@ -236,7 +236,7 @@ app.post("/chat", async (req, res) => {
     const contextResults = await similaritySearch(embedding, 4);
     if (contextResults.length === 0) {
       return res.json({
-        answer: "Lo siento, no he podido encontrar información relevante en nuestros manuales. ¿Podrías reformular tu pregunta o intentar con otro tema?",
+        answer: "Lo siento, no he podido encontrar información relevante en nuestros manuales. ¿Podrías reformular tu pregunta o intentar con otro tema? Si necesitas ayuda adicional, puedes contactar directamente con un asesor: [Contactar por WhatsApp](https://wa.me/2657218215?text=Hola%2C%20necesito%20ayuda%20con%20una%20consulta%20sobre%20los%20manuales)",
         manualesCargados
       });
     }
@@ -256,7 +256,10 @@ app.post("/chat", async (req, res) => {
         topCount = manualCounts[result.manualId];
         topManual = {
           id: result.manualId,
-          info: result.manualInfo
+          info: result.manualInfo,
+          chunkIds: contextResults
+            .filter(r => r.manualId === result.manualId)
+            .map(r => r.chunkId || 'sin-id')
         };
       }
     }
@@ -266,19 +269,22 @@ app.post("/chat", async (req, res) => {
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content:
-          "Eres un asistente amable y cordial de la empresa. Tu objetivo es ayudar a los usuarios "+
-          "respondiendo sus preguntas de manera clara, ordenada y fácil de entender. "+
+          "Eres un asistente educativo y didáctico especializado en manuales. Tu objetivo es ayudar a los usuarios "+
+          "respondiendo sus preguntas de manera clara, estructurada y fácil de entender. "+
           "Usa un tono cálido y cercano en tus respuestas. "+
-          "Formatea tus respuestas utilizando Markdown para mejorar la legibilidad: "+
-          "- Usa **texto en negrita** para resaltar conceptos importantes o títulos "+
-          "- Utiliza listas numeradas para pasos secuenciales "+
-          "- Usa saltos de línea para separar párrafos y mejorar la legibilidad "+
-          "- Si mencionas secciones o categorías, resáltalas con **negrita** "+
+          "SIEMPRE debes: "+
+          "1. Indicar de qué sección específica del manual estás obteniendo la información "+
+          "2. Formatear tus respuestas utilizando Markdown para mejorar la legibilidad: "+
+          "   - Usa **texto en negrita** para resaltar conceptos importantes o títulos "+
+          "   - Utiliza listas numeradas para pasos secuenciales "+
+          "   - Usa saltos de línea para separar párrafos y mejorar la legibilidad "+
+          "   - Si mencionas secciones o categorías, resáltalas con **negrita** "+
+          "3. Al final de cada párrafo relevante, incluye la referencia exacta al manual y sección "+
+          "4. Proporciona ejemplos concretos cuando sea posible "+
           "Basa tus respuestas ÚNICAMENTE en la información del manual proporcionado. "+
           "Si la información solicitada no se encuentra en el manual, responde amablemente: "+
           "\"Lo siento, no he podido encontrar esa información específica en nuestro manual. "+
-          "¿Puedo ayudarte con algo más o prefieres que consulte con un especialista?\"" +
-          "Al final de tu respuesta, incluye un enlace al manual consultado con el texto: 'Ver manual: [título del manual]'"
+          "Te recomiendo contactar directamente con un asesor a través del enlace de WhatsApp que encontrarás al final de este mensaje.\""
         },
         ...history.slice(-4), // Limitamos el historial para evitar tokens excesivos
         { role: "user", content: `Pregunta: "${message}"\n\nContexto:\n${context}` }
@@ -289,6 +295,11 @@ app.post("/chat", async (req, res) => {
 
     let answer = completion.choices[0].message.content;
     
+    // Preparar el enlace a WhatsApp
+    const whatsappNumber = "2657218215";
+    const whatsappMessage = encodeURIComponent("Hola, vengo del chatbot de manuales y necesito ayuda adicional.");
+    const whatsappLink = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
+    
     // Agregar enlace al manual si no lo tiene ya
     if (topManual && !answer.includes("Ver manual:")) {
       const manualLink = topManual.info.isRemote 
@@ -297,6 +308,9 @@ app.post("/chat", async (req, res) => {
         
       answer += `\n\n---\n[Ver manual: ${topManual.info.title}](${manualLink})`;
     }
+    
+    // Agregar enlace a WhatsApp para contacto con un asesor real
+    answer += `\n\n¿Necesitas hablar con un asesor real? [Contacta por WhatsApp](${whatsappLink})`;
 
     res.json({ 
       answer,
@@ -327,7 +341,7 @@ app.get("/status", async (req, res) => {
     ultimaCarga,
     manuales: manualesInfo.length,
     chunks: totalChunks,
-    version: "1.1.0"
+    version: "1.2.0"
   });
 });
 

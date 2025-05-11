@@ -23,13 +23,43 @@ const __dirname = path.dirname(__filename);
 const PUBLIC_MANUALS_DIR = path.join(__dirname, 'public/manuals');
 
 /* ---------- helper: corta el texto en trozos ---------- */
-function chunkText(txt) {
-  const words  = txt.split(/\s+/);
+function chunkText(txt, metadata = {}) {
+  const words = txt.split(/\s+/);
   const blocks = [];
+  
+  // Extraer información de estructura del PDF si está disponible
+  const hasToc = metadata.outline && metadata.outline.length > 0;
+  const tocEntries = hasToc ? metadata.outline : [];
+  
+  // Crear un mapeo aproximado de palabras a secciones basado en el TOC si existe
+  let sections = [];
+  if (hasToc) {
+    sections = tocEntries.map(entry => ({
+      title: entry.title,
+      approxWordPos: Math.floor(entry.pageNum * words.length / metadata.pages)
+    }));
+  }
 
   for (let i = 0; i < words.length; i += CHUNK_WORDS - OVERLAP) {
     const slice = words.slice(i, i + CHUNK_WORDS).join(" ");
-    blocks.push(slice);
+    
+    // Determinar si este bloque pertenece a alguna sección específica
+    let sectionInfo = "";
+    if (sections.length > 0) {
+      // Encontrar la sección más cercana anterior a esta posición de palabra
+      const currentSection = sections
+        .filter(s => s.approxWordPos <= i)
+        .sort((a, b) => b.approxWordPos - a.approxWordPos)[0];
+      
+      if (currentSection) {
+        sectionInfo = `[Sección: ${currentSection.title}]`;
+      }
+    }
+    
+    // Añadir información de sección al inicio del fragmento si existe
+    const blockText = sectionInfo ? `${sectionInfo}\n${slice}` : slice;
+    
+    blocks.push(blockText);
   }
 
   return blocks;
@@ -42,9 +72,16 @@ export async function ingestPDF(pathPdf, originalFilename) {
   const pdfData = await pdf(buffer);
   const text = pdfData.text;
   const info = pdfData.info || {};
+  
+  // Extraer metadatos avanzados
+  const metadata = {
+    pages: pdfData.numpages || 0,
+    outline: pdfData.outline || [],
+    info: info
+  };
 
   /* 2) trocear en bloques */
-  const pieces = chunkText(text);
+  const pieces = chunkText(text, metadata);
 
   /* 3) generar embeddings */
   const openai = new OpenAI();
@@ -75,7 +112,8 @@ export async function ingestPDF(pathPdf, originalFilename) {
     pages: pdfData.numpages || 0,
     createdAt: new Date().toISOString(),
     path: `/manuals/${manualId}.pdf`,  // Ruta donde se guardará el PDF
-    isRemote: false
+    isRemote: false,
+    outline: pdfData.outline || [] // Guardar estructura de secciones si existe
   };
 
   /* 6) Asegurar que exista el directorio de manuales público */
@@ -114,8 +152,15 @@ export async function ingestRemotePDF(url, title, metadata = {}) {
   const text = pdfData.text;
   const info = pdfData.info || {};
   
+  // Extraer metadatos avanzados
+  const pdfMetadata = {
+    pages: pdfData.numpages || 0,
+    outline: pdfData.outline || [],
+    info: info
+  };
+  
   /* 3) Trocear en bloques */
-  const pieces = chunkText(text);
+  const pieces = chunkText(text, pdfMetadata);
   
   /* 4) Generar embeddings */
   const openai = new OpenAI();
@@ -147,7 +192,8 @@ export async function ingestRemotePDF(url, title, metadata = {}) {
     pages: pdfData.numpages || 0,
     createdAt: new Date().toISOString(),
     path: url, // La URL original para acceder directamente
-    isRemote: true
+    isRemote: true,
+    outline: pdfData.outline || [] // Guardar estructura de secciones si existe
   };
   
   /* 7) Guardar en el vector store */

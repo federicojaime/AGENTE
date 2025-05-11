@@ -76,12 +76,18 @@ export async function similaritySearch(queryVec, topK = 4) {
     const manualInfo = manualData.info;
 
     for (const obj of embeddings) {
-      allResults.push({
-        text: obj.text,
-        score: cosine(queryVec, obj.vector),
-        manualId: manualId,
-        manualInfo: manualInfo
-      });
+      const score = cosine(queryVec, obj.vector);
+      // Agregamos un umbral de relevancia para mejorar la calidad de las respuestas
+      // Solo incluimos resultados con score superior a 0.65
+      if (score > 0.65) {
+        allResults.push({
+          text: obj.text,
+          score: score,
+          manualId: manualId,
+          manualInfo: manualInfo,
+          chunkId: obj.id || `chunk-${embeddings.indexOf(obj)}`
+        });
+      }
     }
   }
 
@@ -130,4 +136,26 @@ export async function verifyVectorStore() {
     console.error("Error al verificar vector store:", err);
     return [];
   }
+}
+
+// Nueva función para obtener metadatos de un chunk específico
+export async function getChunkMetadata(manualId, chunkId) {
+  await load();
+  
+  if (!cache.manuals || !cache.manuals[manualId]) {
+    return null;
+  }
+  
+  const chunk = cache.manuals[manualId].embeddings.find(emb => emb.id === chunkId);
+  if (!chunk) {
+    return null;
+  }
+  
+  // Devolvemos metadatos del chunk sin incluir el vector completo (que es muy grande)
+  return {
+    id: chunk.id,
+    text: chunk.text.substring(0, 100) + "...", // Solo un preview del texto
+    manualId: manualId,
+    manualInfo: cache.manuals[manualId].info
+  };
 }
