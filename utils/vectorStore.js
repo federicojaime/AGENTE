@@ -10,7 +10,7 @@ const MANUALS_FILE = path.join(DATA_DIR, "manuals.json");
 
 let cache = null;
 
-/* ---------- helpers ---------- */
+/* ---------- helpers ---------- */ 
 
 // carga de disco a RAM (lazy)
 async function load() {
