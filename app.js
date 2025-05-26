@@ -330,7 +330,7 @@ Palabras clave: requisitos comerciales, reactivación, contrato distribución, r
         }
       ],
       temperature: 0.7,
-      max_tokens: 800,
+      max_tokens: 500,
     });
 
     let answer = completion.choices[0].message.content;
